@@ -74,78 +74,106 @@ CHAINLIT_PORT=8000
 
 ## การรัน Application
 
-เรามี `run.sh` script ที่ช่วยจัดการ proxy modes ให้ครับ
-
-### ใช้ run.sh (แนะนำ)
+> **⚠️ สำคัญ:** ต้องรันจาก **project root** (โฟลเดอร์ที่มี `.env` อยู่) เสมอ
 
 ```bash
-chmod +x run.sh
-./run.sh [MODE]
+cd /path/to/chainlit  # ต้อง cd มาที่นี่ก่อน
 ```
 
-**Modes:**
-
-| Mode | ใช้เมื่อ | คำสั่ง |
-|------|---------|--------|
-| `local` | รันบนเครื่องตัวเอง ไม่มี proxy | `./run.sh local` |
-| `proxy-strip` | Proxy **ตัด path ออก** ก่อน forward (ทั่วไป) | `./run.sh proxy-strip` |
-| `proxy-full` | Proxy **ส่ง path เต็ม** ไปยัง app | `./run.sh proxy-full` |
-| `auto` | Auto-detect (default = proxy-strip) | `./run.sh` หรือ `./run.sh auto` |
-
-### รูปแบบ Proxy ที่รองรับ
-
-#### 1. Path-Stripping Proxy (แนะนำ - ใช้บ่อยที่สุด)
-
-Proxy forward แบบนี้:
-```
-https://domain.com/{username}/proxy/{port}/  →  http://localhost:{port}/
-```
-**Proxy ตัด `/{username}/proxy/{port}/` ออก** ก่อนส่งไป app
+### วิธีที่ 1: ใช้ `run.sh` (แนะนำ)
 
 ```bash
-./run.sh proxy-strip
-# หรือ
-chainlit run app.py -h --host 0.0.0.0 --port 8000
+# รันหลัง proxy (default)
+./scripts/run.sh proxy-strip
+
+# รัน local (ไม่มี proxy)
+./scripts/run.sh local
+
+# ดู help
+./scripts/run.sh help
 ```
 
-#### 2. Full-Path Proxy
+**Output ที่ควรเห็น:**
+```bash
+==========================================
+Chainlit + LangGraph Agent Runner
+==========================================
 
-Proxy forward แบบนี้:
+Mode: Proxy with Path Stripping + Middleware
+URL: http://0.0.0.0:8000/
+Proxy Path: /thanaphits/proxy/8000/
+(From .env file)
+
+✅ Set CHAINLIT_ROOT_PATH=/thanaphits/proxy/8000
+🚀 Starting Chainlit app on http://0.0.0.0:8000/
 ```
-https://domain.com/{username}/proxy/{port}/  →  http://localhost:{port}/{username}/proxy/{port}/
-```
-**Proxy ส่ง path เต็มไปยัง app**
+
+### วิธีที่ 2: รันตรงๆ ด้วย Python
 
 ```bash
-./run.sh proxy-full
-# หรือ
-chainlit run app.py --root-path /{username}/proxy/{port} -h --host 0.0.0.0 --port 8000
+# ต้องอยู่ที่ project root
+python server/run_server.py
 ```
 
-### แบบปกติ (Local Development)
+### วิธีที่ 3: ใช้ `chainlit run` (ไม่ผ่าน proxy middleware)
 
 ```bash
-./run.sh local
-# หรือ
+# Local development
+chainlit run src/app.py -w
+
+# หรือรันหลัง proxy
+chainlit run src/app.py --root-path /thanaphits/proxy/8000 -h --host 0.0.0.0
+```
+
+### ⚠️ ห้ามรันจาก sub-directory
+
+```bash
+# ❌ ผิด - จะหา .env ไม่เจอ
+cd server
+python run_server.py
+
+# ✅ ถูก - รันจาก project root
+cd ..
+python server/run_server.py
+```
+
+## แก้ไขปัญหา
+
+### Model '' was not found
+
+ถ้าได้ error นี้ แสดงว่า `.env` ไม่ถูกโหลด (ค่า model เป็น empty string):
+
+```json
+{"detail": "Model '' was not found"}
+```
+
+**สาเหตุ:** รันจากผิด directory (ไม่ใช่ project root)
+
+**แก้ไข:**
+```bash
+# ❌ ผิด
+cd server && python run_server.py
+
+# ✅ ถูก
+cd /path/to/project
+python server/run_server.py
+```
+
+### ตรวจสอบว่า .env โหลดถูกต้อง
+
+```bash
 source .venv/bin/activate
-chainlit run app.py -w
+python -c "
+from dotenv import load_dotenv
+from pathlib import Path
+load_dotenv(Path('.').resolve() / '.env')
+import os
+print('BASE_URL:', os.getenv('OPENAI_API_BASE_URL'))
+print('MODEL:', os.getenv('OPENAI_MODEL'))
+"
 ```
 
-### รันหลัง Proxy (Production)
-
-สำหรับ auto-tunnel ที่ forward จาก `https://domain.com/{username}/proxy/8000/` → `http://localhost:8000/` (ตัด path ออก):
-
-```bash
-./run.sh proxy-strip
-```
-
-**อธิบาย flags:**
-- `--root-path` - กำหนด root path (ใช้เฉพาะกับ full-path proxy)
-- `-h` (หรือ `--headless`) - ไม่เปิด browser อัตโนมัติ (สำหรับ production)
-- `--host 0.0.0.0` - รับ connection จากทุก IP (สำหรับ Docker/remote access)
-- `--port 8000` - กำหนด port
-
-## หมายเหตุเกี่ยวกับ Proxy
+ถ้าแสดงค่าถูกต้อง = `.env` โหลดสำเร็จ
 
 - Chainlit ใช้ **WebSockets** ดังนั้น proxy ต้องรองรับ WebSocket proxying
 - หากมีปัญหาเรื่อง sticky sessions ให้ตั้งค่า `transports = ["websocket"]` ใน `.chainlit/config.toml`

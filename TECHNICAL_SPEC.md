@@ -420,7 +420,73 @@ fi
 3. **Default pattern** — `/{username}/proxy/{portNumber}`
 
 ### Files Modified
-- `run.sh` — added `.env` loader and conditional proxy path selection
+- `scripts/run.sh` — added `.env` loader and conditional proxy path selection
+
+---
+
+## Problem 8: `.env` Not Loading When Running from Subdirectories
+
+### Symptom
+When running `python server/run_server.py` from the project root, everything works. But when running from a subdirectory or the app fails to find `.env`, the LLM returns:
+
+```json
+{"detail": "Model '' was not found"}
+```
+
+The model name is an empty string `''`, indicating `OPENAI_MODEL` was not loaded from `.env`.
+
+### Root Cause
+`python-dotenv`'s `load_dotenv()` loads from the **current working directory** by default, not from the file's location:
+
+```python
+# OLD: Loads from CWD, not from project root
+load_dotenv()  # Looks for .env in current directory
+```
+
+When running `server/run_server.py`, if the CWD is `server/`, it looks for `server/.env` which doesn't exist.
+
+### Solution: Explicitly Specify `.env` Path
+
+Use `pathlib` to compute the project root relative to the current file, then pass the absolute path to `load_dotenv()`:
+
+```python
+from pathlib import Path
+from dotenv import load_dotenv
+
+# Compute project root (parent of the directory containing this file)
+project_root = Path(__file__).parent.parent
+
+# Load .env from project root explicitly
+load_dotenv(dotenv_path=project_root / ".env")
+```
+
+**Applied to all files that need environment variables:**
+
+| File | `.env` Loading |
+|------|---------------|
+| `server/asgi_app.py` | `load_dotenv(dotenv_path=Path(__file__).parent.parent / ".env")` |
+| `server/run_server.py` | `load_dotenv(dotenv_path=Path(__file__).parent.parent / ".env")` |
+| `src/agent.py` | `load_dotenv(dotenv_path=Path(__file__).parent.parent / ".env")` |
+| `src/app.py` | `load_dotenv(dotenv_path=Path(__file__).parent.parent / ".env")` |
+
+### Key Insight
+
+Always use **absolute paths** for `.env` loading in projects with subdirectories:
+
+```python
+# ✅ Good: Explicit path
+project_root = Path(__file__).parent.parent
+load_dotenv(dotenv_path=project_root / ".env")
+
+# ❌ Bad: Implicit CWD-dependent
+load_dotenv()  # Breaks when CWD changes
+```
+
+### Files Modified
+- `server/asgi_app.py` — added explicit `.env` path
+- `server/run_server.py` — added explicit `.env` path
+- `src/agent.py` — added explicit `.env` path
+- `src/app.py` — added explicit `.env` path
 
 ---
 
@@ -653,6 +719,7 @@ The proxy path pattern `/{username}/proxy/{portNumber}` is shared infrastructure
 - [x] Tool result display works
 - [x] Message ordering is correct
 - [x] Tool status updates from "Running..." to result
+- [x] `.env` loads correctly from project root regardless of CWD
 
 ---
 
